@@ -4,3 +4,6 @@
 # Local Terraform state files.
 terraform.tfstate
 terraform.tfstate.backup
+
+# Terraform dependency graphs generated locally
+*.svg
