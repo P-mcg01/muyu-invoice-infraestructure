@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: '3'
+
+tasks:
+  init:
+    desc: "Initialize Terraform"
+    cmds:
+      - terraform init -backend=false -input=false
+
+  fmt:
+    ignore_error: true
+    desc: "Format Terraform files"
+    cmds:
+      - terraform fmt -recursive
+
+  fmt-check:
+    ignore_error: true
+    desc: "Verify that Terraform files are properly formatted"
+    cmds:
+      - terraform fmt -check -recursive
+
+  validate:
+    desc: "Validate the Terraform configuration"
+    cmds:
+      - terraform validate
+
+  check:
+    desc: "Run all checks before opening a pull request"
+    cmds:
+      - task: fmt-check
+      - task: validate
