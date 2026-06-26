@@ -1,82 +1,136 @@
-# VPC resources will be defined here when network infrastructure is implemented.
-resource "aws_vpc" "muyu" {
-  cidr_block = "10.4.0.0/16"
+# Main VPC that contains all subnets and network resources.
+resource "aws_vpc" "main" {
+  cidr_block           = var.vpc_cidr
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = {
+    Name = "${var.name_prefix}-vpc"
+  }
 }
 
-# Public subnet resources will be added here for internet-facing components.
-resource "aws_subnet" "public_subnet_1" {
-  vpc_id     = aws_vpc.muyu.id
-  cidr_block = "10.4.1.0/24"
+# Public subnets are used for resources that need direct internet access.
+resource "aws_subnet" "public1" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = var.subnet_public1_cidr
+  availability_zone       = var.availability_zone1
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "${var.name_prefix}-public-subnet-1"
+  }
 }
 
-resource "aws_subnet" "public_subnet_2" {
-  vpc_id     = aws_vpc.muyu.id
-  cidr_block = "10.4.2.0/24"
+resource "aws_subnet" "public2" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = var.subnet_public2_cidr
+  availability_zone       = var.availability_zone2
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "${var.name_prefix}-public-subnet-2"
+  }
 }
 
-# Private subnet resources will be added here for internal components.
-resource "aws_subnet" "private_subnet_1" {
-  vpc_id     = aws_vpc.muyu.id
-  cidr_block = "10.4.3.0/24"
+# Private subnets are used for internal resources such as applications and databases.
+resource "aws_subnet" "private1" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = var.subnet_private1_cidr
+  availability_zone = var.availability_zone1
+
+  tags = {
+    Name = "${var.name_prefix}-private-subnet-1"
+  }
 }
 
-resource "aws_subnet" "private_subnet_2" {
-  vpc_id     = aws_vpc.muyu.id
-  cidr_block = "10.4.4.0/24"
+resource "aws_subnet" "private2" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = var.subnet_private2_cidr
+  availability_zone = var.availability_zone2
+
+  tags = {
+    Name = "${var.name_prefix}-private-subnet-2"
+  }
 }
 
-# Internet Gateway resources will be added here for public internet access.
+# Internet Gateway allows public subnets to reach the internet.
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "${var.name_prefix}-internet-gateway"
+  }
+}
+
+# Elastic IP used by the NAT Gateway.
 resource "aws_eip" "nat" {
   domain = "vpc"
+
+  tags = {
+    Name = "${var.name_prefix}-nat-eip"
+  }
 }
 
+# NAT Gateway lets private subnets reach the internet without being public.
 resource "aws_nat_gateway" "main" {
   allocation_id = aws_eip.nat.id
-  subnet_id     = aws_subnet.public_subnet_1.id
+  subnet_id     = aws_subnet.public1.id
 
-  depends_on = [aws_internet_gateway.igw]
+  tags = {
+    Name = "${var.name_prefix}-nat-gateway"
+  }
+
+  depends_on = [aws_internet_gateway.main]
 }
 
-resource "aws_internet_gateway" "igw" {
-  vpc_id = aws_vpc.muyu.id
-}
+# Public route table sends internet traffic to the Internet Gateway.
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
 
-# Route Tables will be added here for public and private subnet routing.
-resource "aws_route_table" "rt_public" {
-  vpc_id = aws_vpc.muyu.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.igw.id
+  tags = {
+    Name = "${var.name_prefix}-public-route-table"
   }
 }
 
-resource "aws_route_table" "rt_private" {
-  vpc_id = aws_vpc.muyu.id
+resource "aws_route" "public_internet" {
+  route_table_id         = aws_route_table.public.id
+  destination_cidr_block = "0.0.0.0/0"
+  gateway_id             = aws_internet_gateway.main.id
+}
 
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.main.id
+# Public subnets use the public route table, which sends internet traffic to the Internet Gateway.
+resource "aws_route_table_association" "public1" {
+  route_table_id = aws_route_table.public.id
+  subnet_id      = aws_subnet.public1.id
+}
+
+resource "aws_route_table_association" "public2" {
+  route_table_id = aws_route_table.public.id
+  subnet_id      = aws_subnet.public2.id
+}
+
+# Private route table sends internet traffic through the NAT Gateway.
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "${var.name_prefix}-private-route-table"
   }
 }
 
-# Route Table Associations will be added here to attach subnets to routes.
-resource "aws_route_table_association" "public_subnet_1_association" {
-  subnet_id      = aws_subnet.public_subnet_1.id
-  route_table_id = aws_route_table.rt_public.id
+resource "aws_route" "private_nat" {
+  route_table_id         = aws_route_table.private.id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.main.id
 }
 
-resource "aws_route_table_association" "public_subnet_2_association" {
-  subnet_id      = aws_subnet.public_subnet_2.id
-  route_table_id = aws_route_table.rt_public.id
+# Private subnets use the private route table, which sends internet traffic to the NAT Gateway.
+resource "aws_route_table_association" "private1" {
+  route_table_id = aws_route_table.private.id
+  subnet_id      = aws_subnet.private1.id
 }
 
-resource "aws_route_table_association" "private_subnet_1_association" {
-  subnet_id      = aws_subnet.private_subnet_1.id
-  route_table_id = aws_route_table.rt_private.id
-}
-
-resource "aws_route_table_association" "private_subnet_2_association" {
-  subnet_id      = aws_subnet.private_subnet_2.id
-  route_table_id = aws_route_table.rt_private.id
+resource "aws_route_table_association" "private2" {
+  route_table_id = aws_route_table.private.id
+  subnet_id      = aws_subnet.private2.id
 }
