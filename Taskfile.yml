@@ -1,31 +1,95 @@
 # yaml-language-server: $schema=https://taskfile.dev/schema.json
-version: '3'
+version: "3"
+
+dotenv:
+  - .env
 
 tasks:
+  setup:
+    desc: "Prepare the local development environment"
+    cmds:
+      - task: init
+      - pre-commit install
+      - tflint --init
+
+  syntax:
+    desc: "Run fast development checks"
+    cmds:
+      - task: fmt
+      - task: lint-fix
+      - task: validate
+
+  pre-pr:
+    desc: "Run all checks before opening a Pull Request"
+    cmds:
+      - task: fmt-check
+      - task: validate
+      - task: lint
+      - task: security
+      - task: cost
+
+  clean:
+    desc: "Remove generated Terraform plan files"
+    cmds:
+      - rm -f tfplan.binary tfplan.json
+  #
+  # Terraform
+  #
   init:
     desc: "Initialize Terraform"
     cmds:
       - terraform init -backend=false -input=false
 
   fmt:
-    ignore_error: true
     desc: "Format Terraform files"
     cmds:
       - terraform fmt -recursive
 
   fmt-check:
-    ignore_error: true
-    desc: "Verify that Terraform files are properly formatted"
+    desc: "Verify Terraform formatting"
     cmds:
       - terraform fmt -check -recursive
 
   validate:
-    desc: "Validate the Terraform configuration"
+    desc: "Validate Terraform configuration"
     cmds:
       - terraform validate
 
-  check:
-    desc: "Run all checks before opening a pull request"
+  plan:
+    desc: "Generate Terraform plan artifacts"
     cmds:
-      - task: fmt-check
-      - task: validate
+      - terraform plan -out=tfplan.binary
+      - terraform show -json tfplan.binary > tfplan.json
+    generates:
+      - tfplan.binary
+      - tfplan.json
+
+  #
+  # Analysis
+  #
+  lint:
+    desc: "Run TFLint"
+    cmds:
+      - tflint
+
+  lint-fix:
+    desc: "Run TFLint with automatic fixes"
+    cmds:
+      - tflint --fix
+
+  security:
+    desc: "Run Checkov against the Terraform plan"
+    deps:
+      - plan
+    cmds:
+      - checkov -f tfplan.json
+
+  cost:
+    desc: "Estimate infrastructure cost with Infracost"
+    deps:
+      - plan
+    preconditions:
+      - sh: test -n "$INFRACOST_API_KEY"
+        msg: INFRACOST_API_KEY environment variable is not set.
+    cmds:
+      - infracost breakdown --path=tfplan.json

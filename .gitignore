@@ -7,3 +7,6 @@ terraform.tfstate.backup
 
 # Terraform dependency graphs generated locally
 *.svg
+
+# environment
+.env
